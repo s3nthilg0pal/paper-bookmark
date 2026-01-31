@@ -3,7 +3,7 @@ const cors = require('cors');
 const path = require('path');
 const http = require('http');
 const WebSocket = require('ws');
-const Datastore = require('nedb-promises');
+const loki = require('lokijs');
 const fetch = require('node-fetch');
 
 const app = express();
@@ -66,14 +66,31 @@ function broadcast(event, data) {
   });
 }
 
-// Initialize NeDB database
-const db = Datastore.create({
-  filename: path.join(__dirname, 'data', 'papers.db'),
-  autoload: true
+// Initialize LokiJS database
+let papers;
+const db = new loki(path.join(__dirname, 'data', 'papers.db'), {
+  autoload: true,
+  autoloadCallback: initializeDatabase,
+  autosave: true,
+  autosaveInterval: 4000
 });
 
-// Create index on url for faster lookups
-db.ensureIndex({ fieldName: 'url', unique: true });
+function initializeDatabase() {
+  // Get or create the papers collection
+  papers = db.getCollection('papers');
+  if (!papers) {
+    papers = db.addCollection('papers', {
+      unique: ['url'],
+      indices: ['dateAdded', 'title']
+    });
+  }
+  console.log('📁 Database initialized');
+}
+
+// Generate unique ID
+function generateId() {
+  return Date.now().toString(36) + Math.random().toString(36).substr(2, 9);
+}
 
 // Middleware
 app.use(cors());
@@ -83,56 +100,60 @@ app.use(express.static(path.join(__dirname, 'public')));
 // ============== API ROUTES ==============
 
 // GET all papers
-app.get('/api/papers', async (req, res) => {
+app.get('/api/papers', (req, res) => {
   try {
     const { search, tag, sort = 'dateAdded', order = 'desc' } = req.query;
     
-    let query = {};
+    let results = papers.chain();
     
     // Search filter
     if (search) {
-      const searchRegex = new RegExp(search, 'i');
-      query = {
-        $or: [
-          { title: searchRegex },
-          { authors: searchRegex },
-          { abstract: searchRegex },
-          { tags: searchRegex }
-        ]
-      };
+      const searchLower = search.toLowerCase();
+      results = results.where((paper) => {
+        return (
+          (paper.title && paper.title.toLowerCase().includes(searchLower)) ||
+          (paper.authors && paper.authors.toLowerCase().includes(searchLower)) ||
+          (paper.abstract && paper.abstract.toLowerCase().includes(searchLower)) ||
+          (paper.tags && paper.tags.some(t => t.toLowerCase().includes(searchLower)))
+        );
+      });
     }
     
     // Tag filter
     if (tag) {
-      query.tags = tag;
+      results = results.where((paper) => paper.tags && paper.tags.includes(tag));
     }
     
-    const sortOrder = order === 'asc' ? 1 : -1;
-    const papers = await db.find(query).sort({ [sort]: sortOrder });
+    // Sort
+    const isDescending = order === 'desc';
+    results = results.simplesort(sort, isDescending);
     
-    res.json({ success: true, data: papers });
+    // Map to clean response (remove LokiJS metadata)
+    const data = results.data().map(cleanPaper);
+    
+    res.json({ success: true, data });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }
 });
 
 // GET single paper by ID
-app.get('/api/papers/:id', async (req, res) => {
+app.get('/api/papers/:id', (req, res) => {
   try {
-    const paper = await db.findOne({ _id: req.params.id });
+    const paper = papers.findOne({ _id: req.params.id });
     
     if (!paper) {
       return res.status(404).json({ success: false, error: 'Paper not found' });
     }
     
-    res.json({ success: true, data: paper });
+    res.json({ success: true, data: cleanPaper(paper) });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }
 });
 
 // POST new paper
-app.post('/api/papers', async (req, res) => {
+app.post('/api/papers', (req, res) => {
   try {
     const { url, title, authors, abstract, tags, source } = req.body;
     
@@ -141,12 +162,13 @@ app.post('/api/papers', async (req, res) => {
     }
     
     // Check if paper already exists
-    const existing = await db.findOne({ url });
+    const existing = papers.findOne({ url });
     if (existing) {
-      return res.status(409).json({ success: false, error: 'Paper already exists', data: existing });
+      return res.status(409).json({ success: false, error: 'Paper already exists', data: cleanPaper(existing) });
     }
     
     const paper = {
+      _id: generateId(),
       url,
       title: title || 'Untitled Paper',
       authors: authors || '',
@@ -158,59 +180,61 @@ app.post('/api/papers', async (req, res) => {
       accessCount: 0
     };
     
-    const newPaper = await db.insert(paper);
+    const newPaper = papers.insert(paper);
+    const cleanedPaper = cleanPaper(newPaper);
     
     // Broadcast to all connected clients
-    broadcast('paper:created', newPaper);
+    broadcast('paper:created', cleanedPaper);
     
-    res.status(201).json({ success: true, data: newPaper });
+    res.status(201).json({ success: true, data: cleanedPaper });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }
 });
 
 // PUT update paper
-app.put('/api/papers/:id', async (req, res) => {
+app.put('/api/papers/:id', (req, res) => {
   try {
     const { title, authors, abstract, tags, url } = req.body;
     
-    const updateData = {
-      ...(title && { title }),
-      ...(authors !== undefined && { authors }),
-      ...(abstract !== undefined && { abstract }),
-      ...(tags && { tags }),
-      ...(url && { url, source: detectSource(url) })
-    };
+    const paper = papers.findOne({ _id: req.params.id });
     
-    const numUpdated = await db.update(
-      { _id: req.params.id },
-      { $set: updateData },
-      { returnUpdatedDocs: true }
-    );
-    
-    if (numUpdated === 0) {
+    if (!paper) {
       return res.status(404).json({ success: false, error: 'Paper not found' });
     }
     
-    const updatedPaper = await db.findOne({ _id: req.params.id });
+    // Update fields
+    if (title) paper.title = title;
+    if (authors !== undefined) paper.authors = authors;
+    if (abstract !== undefined) paper.abstract = abstract;
+    if (tags) paper.tags = tags;
+    if (url) {
+      paper.url = url;
+      paper.source = detectSource(url);
+    }
+    
+    papers.update(paper);
+    const cleanedPaper = cleanPaper(paper);
     
     // Broadcast to all connected clients
-    broadcast('paper:updated', updatedPaper);
+    broadcast('paper:updated', cleanedPaper);
     
-    res.json({ success: true, data: updatedPaper });
+    res.json({ success: true, data: cleanedPaper });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }
 });
 
 // DELETE paper
-app.delete('/api/papers/:id', async (req, res) => {
+app.delete('/api/papers/:id', (req, res) => {
   try {
-    const numRemoved = await db.remove({ _id: req.params.id });
+    const paper = papers.findOne({ _id: req.params.id });
     
-    if (numRemoved === 0) {
+    if (!paper) {
       return res.status(404).json({ success: false, error: 'Paper not found' });
     }
+    
+    papers.remove(paper);
     
     // Broadcast to all connected clients
     broadcast('paper:deleted', { _id: req.params.id });
@@ -222,30 +246,31 @@ app.delete('/api/papers/:id', async (req, res) => {
 });
 
 // Track paper access (when user clicks to open)
-app.post('/api/papers/:id/access', async (req, res) => {
+app.post('/api/papers/:id/access', (req, res) => {
   try {
-    await db.update(
-      { _id: req.params.id },
-      { 
-        $set: { lastAccessed: new Date().toISOString() },
-        $inc: { accessCount: 1 }
-      }
-    );
+    const paper = papers.findOne({ _id: req.params.id });
     
-    const paper = await db.findOne({ _id: req.params.id });
-    res.json({ success: true, data: paper });
+    if (!paper) {
+      return res.status(404).json({ success: false, error: 'Paper not found' });
+    }
+    
+    paper.lastAccessed = new Date().toISOString();
+    paper.accessCount = (paper.accessCount || 0) + 1;
+    papers.update(paper);
+    
+    res.json({ success: true, data: cleanPaper(paper) });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }
 });
 
 // GET all unique tags
-app.get('/api/tags', async (req, res) => {
+app.get('/api/tags', (req, res) => {
   try {
-    const papers = await db.find({});
+    const allPapers = papers.find();
     const tagsSet = new Set();
     
-    papers.forEach(paper => {
+    allPapers.forEach(paper => {
       if (paper.tags && Array.isArray(paper.tags)) {
         paper.tags.forEach(tag => tagsSet.add(tag));
       }
@@ -274,6 +299,13 @@ app.post('/api/fetch-metadata', async (req, res) => {
 });
 
 // ============== HELPER FUNCTIONS ==============
+
+// Remove LokiJS internal fields from response
+function cleanPaper(paper) {
+  if (!paper) return null;
+  const { $loki, meta, ...clean } = paper;
+  return clean;
+}
 
 function detectSource(url) {
   if (url.includes('arxiv.org')) return 'arXiv';
