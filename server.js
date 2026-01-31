@@ -206,7 +206,7 @@ app.get('/api/health', (req, res) => {
 });
 
 // GET all papers
-app.get('/api/papers', authenticateApiKey, (req, res) => {
+app.get('/api/papers', (req, res) => {
   try {
     const { search, tag, sort = 'dateAdded', order = 'desc' } = req.query;
     
@@ -243,7 +243,7 @@ app.get('/api/papers', authenticateApiKey, (req, res) => {
 });
 
 // GET single paper by ID
-app.get('/api/papers/:id', authenticateApiKey, (req, res) => {
+app.get('/api/papers/:id', (req, res) => {
   try {
     const paper = papers.findOne({ id: req.params.id });
     
@@ -259,7 +259,7 @@ app.get('/api/papers/:id', authenticateApiKey, (req, res) => {
 });
 
 // POST new paper
-app.post('/api/papers', authenticateApiKey, (req, res) => {
+app.post('/api/papers', (req, res) => {
   try {
     const validationErrors = validatePaperInput(req.body);
     if (validationErrors.length > 0) {
@@ -305,7 +305,7 @@ app.post('/api/papers', authenticateApiKey, (req, res) => {
 });
 
 // PUT update paper
-app.put('/api/papers/:id', authenticateApiKey, (req, res) => {
+app.put('/api/papers/:id', (req, res) => {
   try {
     const paper = papers.findOne({ id: req.params.id });
     
@@ -344,7 +344,7 @@ app.put('/api/papers/:id', authenticateApiKey, (req, res) => {
 });
 
 // DELETE paper
-app.delete('/api/papers/:id', authenticateApiKey, (req, res) => {
+app.delete('/api/papers/:id', (req, res) => {
   try {
     const paper = papers.findOne({ id: req.params.id });
     
@@ -365,7 +365,7 @@ app.delete('/api/papers/:id', authenticateApiKey, (req, res) => {
 });
 
 // Track paper access
-app.post('/api/papers/:id/access', authenticateApiKey, (req, res) => {
+app.post('/api/papers/:id/access', (req, res) => {
   try {
     const paper = papers.findOne({ id: req.params.id });
     
@@ -387,7 +387,7 @@ app.post('/api/papers/:id/access', authenticateApiKey, (req, res) => {
 });
 
 // GET all unique tags
-app.get('/api/tags', authenticateApiKey, (req, res) => {
+app.get('/api/tags', (req, res) => {
   try {
     const allPapers = papers.find();
     const tagsSet = new Set();
@@ -406,7 +406,7 @@ app.get('/api/tags', authenticateApiKey, (req, res) => {
 });
 
 // Fetch paper metadata
-app.post('/api/fetch-metadata', authenticateApiKey, (req, res) => {
+app.post('/api/fetch-metadata', (req, res) => {
   try {
     const { url } = req.body;
     
