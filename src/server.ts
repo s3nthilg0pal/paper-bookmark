@@ -70,7 +70,7 @@ function generateId(): string {
 // Middleware
 app.use(cors());
 app.use(express.json());
-app.use(express.static(path.join(__dirname, '..', 'public')));
+app.use(express.static(path.join(__dirname, '..', 'public'), { index: false }));
 
 // ============== SSE ENDPOINT ==============
 
@@ -317,6 +317,19 @@ app.post('/api/fetch-metadata', async (req: Request<unknown, unknown, { url: str
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     res.status(500).json({ success: false, error: errorMessage });
+  }
+});
+
+// ============== SSR EXPERIMENT ==============
+
+app.get('/ssr', (req: Request<unknown, unknown, unknown, PaperQuery>, res: Response) => {
+  try {
+    const { list, tags, queryState } = getSsrData(req.query);
+    const html = renderSsrApp(list, tags, queryState);
+    res.status(200).send(html);
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    res.status(500).send(`<pre>SSR error: ${errorMessage}</pre>`);
   }
 });
 
@@ -861,9 +874,366 @@ function decodeHtmlEntities(text: string): string {
     .trim();
 }
 
+function getAllTags(allPapers: LokiPaper[]): string[] {
+  const tagsSet = new Set<string>();
+  allPapers.forEach((paper) => {
+    if (paper.tags && Array.isArray(paper.tags)) {
+      paper.tags.forEach((tag) => tagsSet.add(tag));
+    }
+  });
+  return Array.from(tagsSet).sort();
+}
+
+function getSsrData(query: PaperQuery): { list: Paper[]; tags: string[]; queryState: SsrQueryState } {
+  const allPapers = papers.find();
+  const tags = getAllTags(allPapers);
+  const { sort, order, sortValue } = parseSortOrder(query);
+  const search = typeof query.search === 'string' ? query.search.trim() : '';
+  const tag = typeof query.tag === 'string' ? query.tag : '';
+
+  let results = papers.chain();
+
+  if (search) {
+    const searchLower = search.toLowerCase();
+    results = results.where((paper: LokiPaper) => {
+      return (
+        (paper.title?.toLowerCase().includes(searchLower)) ||
+        (paper.authors?.toLowerCase().includes(searchLower)) ||
+        (paper.abstract?.toLowerCase().includes(searchLower)) ||
+        (paper.tags?.some((t) => t.toLowerCase().includes(searchLower)))
+      );
+    });
+  }
+
+  if (tag) {
+    results = results.where((paper: LokiPaper) => paper.tags?.includes(tag));
+  }
+
+  const isDescending = order === 'desc';
+  results = results.simplesort(sort, { desc: isDescending });
+
+  const list = results.data().map(cleanPaper);
+
+  return {
+    list,
+    tags,
+    queryState: {
+      search,
+      tag,
+      sortValue,
+    },
+  };
+}
+
+interface SsrQueryState {
+  search: string;
+  tag: string;
+  sortValue: string;
+}
+
+function parseSortOrder(query: PaperQuery): { sort: keyof LokiPaper; order: 'asc' | 'desc'; sortValue: string } {
+  const allowedSorts: Array<keyof LokiPaper> = ['dateAdded', 'title', 'accessCount'];
+  let sort: keyof LokiPaper = 'dateAdded';
+  let order: 'asc' | 'desc' = 'desc';
+
+  const sortParam = typeof query.sort === 'string' ? query.sort : '';
+  const orderParam = typeof query.order === 'string' ? query.order : '';
+
+  if (sortParam.includes('-')) {
+    const [sortPart, orderPart] = sortParam.split('-');
+    if (allowedSorts.includes(sortPart as keyof LokiPaper)) {
+      sort = sortPart as keyof LokiPaper;
+    }
+    if (orderPart === 'asc' || orderPart === 'desc') {
+      order = orderPart;
+    }
+  } else {
+    if (allowedSorts.includes(sortParam as keyof LokiPaper)) {
+      sort = sortParam as keyof LokiPaper;
+    }
+    if (orderParam === 'asc' || orderParam === 'desc') {
+      order = orderParam;
+    }
+  }
+
+  return {
+    sort,
+    order,
+    sortValue: `${sort}-${order}`,
+  };
+}
+
+// Server-side rendered HTML that mirrors the client UI
+function renderSsrApp(papersList: Paper[], tags: string[], queryState: SsrQueryState): string {
+  const hasPapers = papersList.length > 0;
+  const paperCards = papersList.map((paper) => {
+    const safeTitle = escapeHtml(paper.title || 'Untitled Paper');
+    const safeAuthors = escapeHtml(paper.authors || '');
+    const safeAbstract = escapeHtml(paper.abstract || '');
+    const safeSource = escapeHtml(paper.source || 'Web');
+    const safeUrl = escapeHtml(paper.url || '');
+    const safeDate = escapeHtml(formatRelativeDate(paper.dateAdded));
+    const sourceClass = escapeClassName(paper.source || 'web');
+    const tagChips = (paper.tags ?? []).map((tag) => `<span class="paper-tag">${escapeHtml(tag)}</span>`).join('');
+
+    return `
+      <article class="paper-card" onclick="openPaper('${escapeJsString(paper._id ?? '')}', '${escapeJsString(paper.url ?? '')}')">
+        <div class="paper-header">
+          <span class="paper-source ${sourceClass}">${safeSource}</span>
+          <div class="paper-actions" onclick="event.stopPropagation()">
+            <button class="paper-action-btn" onclick="editPaper('${escapeJsString(paper._id ?? '')}')" title="Edit">✏️</button>
+            <button class="paper-action-btn" onclick="openDeleteModal('${escapeJsString(paper._id ?? '')}')" title="Delete">🗑️</button>
+          </div>
+        </div>
+        <h3 class="paper-title">${safeTitle}</h3>
+        ${safeAuthors ? `<p class="paper-authors">${safeAuthors}</p>` : ''}
+        ${safeAbstract ? `<p class="paper-abstract">${safeAbstract}</p>` : ''}
+        <div class="paper-footer">
+          <div class="paper-tags">${tagChips}</div>
+          <span class="paper-date">${safeDate}</span>
+        </div>
+      </article>
+    `;
+  }).join('');
+
+  const tagOptions = tags.map((tag) => `
+    <option value="${escapeHtml(tag)}" ${tag === queryState.tag ? 'selected' : ''}>${escapeHtml(tag)}</option>
+  `).join('');
+
+  const initialData = JSON.stringify({ papers: papersList, tags }).replace(/</g, '\\u003c');
+
+  return `
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+      <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>Paper Bookmark</title>
+      <link rel="stylesheet" href="styles.css">
+      <link rel="preconnect" href="https://fonts.googleapis.com">
+      <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+      <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    </head>
+    <body data-ssr="true">
+      <div class="app">
+        <header class="header">
+          <div class="header-content">
+            <h1 class="logo">
+              <span class="logo-icon">📚</span>
+              <span class="logo-text">Paper Bookmark</span>
+              <span id="syncIndicator" class="sync-indicator" title="Connecting..."></span>
+            </h1>
+            <button class="btn btn-primary add-btn" onclick="openAddModal()">
+              <span class="btn-icon">+</span>
+              <span class="btn-text">Add Paper</span>
+            </button>
+          </div>
+        </header>
+
+        <form id="searchForm" class="search-bar" method="GET" action="">
+          <div class="search-container">
+            <input
+              type="text"
+              id="searchInput"
+              name="search"
+              placeholder="Search papers..."
+              class="search-input"
+              value="${escapeHtml(queryState.search)}"
+            >
+            <span class="search-icon">🔍</span>
+          </div>
+          <div class="filter-container">
+            <select id="tagFilter" name="tag" class="filter-select" onchange="this.form.submit()">
+              <option value="">All Tags</option>
+              ${tagOptions}
+            </select>
+            <select id="sortSelect" name="sort" class="filter-select" onchange="this.form.submit()">
+              <option value="dateAdded-desc" ${queryState.sortValue === 'dateAdded-desc' ? 'selected' : ''}>Newest First</option>
+              <option value="dateAdded-asc" ${queryState.sortValue === 'dateAdded-asc' ? 'selected' : ''}>Oldest First</option>
+              <option value="title-asc" ${queryState.sortValue === 'title-asc' ? 'selected' : ''}>Title A-Z</option>
+              <option value="title-desc" ${queryState.sortValue === 'title-desc' ? 'selected' : ''}>Title Z-A</option>
+              <option value="accessCount-desc" ${queryState.sortValue === 'accessCount-desc' ? 'selected' : ''}>Most Accessed</option>
+            </select>
+          </div>
+        </form>
+
+        <main class="papers-container">
+          <div id="papersList" class="papers-list ${hasPapers ? '' : 'hidden'}">
+            ${paperCards}
+          </div>
+          <div id="emptyState" class="empty-state ${hasPapers ? 'hidden' : ''}">
+            <div class="empty-icon">📄</div>
+            <h2>No papers yet</h2>
+            <p>Start by adding your first research paper</p>
+            <button class="btn btn-primary" onclick="openAddModal()">Add Paper</button>
+          </div>
+          <div id="loadingState" class="loading-state hidden">
+            <div class="spinner"></div>
+            <p>Loading papers...</p>
+          </div>
+        </main>
+
+        <div id="paperModal" class="modal hidden">
+          <div class="modal-overlay" onclick="closeModal()"></div>
+          <div class="modal-content">
+            <div class="modal-header">
+              <h2 id="modalTitle">Add Paper</h2>
+              <button class="modal-close" onclick="closeModal()">×</button>
+            </div>
+            <form id="paperForm" onsubmit="handleSubmit(event)">
+              <div class="form-group">
+                <label for="paperUrl">Paper URL *</label>
+                <div class="url-input-group">
+                  <input
+                    type="url"
+                    id="paperUrl"
+                    required
+                    placeholder="https://arxiv.org/abs/..."
+                    class="form-input"
+                  >
+                  <button type="button" class="btn btn-secondary fetch-btn" onclick="fetchMetadata()">
+                    <span id="fetchBtnText">Fetch Info</span>
+                  </button>
+                </div>
+              </div>
+              <div class="form-group">
+                <label for="paperTitle">Title *</label>
+                <input
+                  type="text"
+                  id="paperTitle"
+                  required
+                  placeholder="Paper title"
+                  class="form-input"
+                >
+              </div>
+              <div class="form-group">
+                <label for="paperAuthors">Authors</label>
+                <input
+                  type="text"
+                  id="paperAuthors"
+                  placeholder="Author names (comma separated)"
+                  class="form-input"
+                >
+              </div>
+              <div class="form-group">
+                <label for="paperAbstract">Abstract / Notes</label>
+                <textarea
+                  id="paperAbstract"
+                  placeholder="Paper abstract or your notes..."
+                  class="form-input form-textarea"
+                  rows="4"
+                ></textarea>
+              </div>
+              <div class="form-group">
+                <label for="paperTags">Tags</label>
+                <input
+                  type="text"
+                  id="paperTags"
+                  placeholder="machine-learning, nlp, transformers"
+                  class="form-input"
+                >
+                <small class="form-hint">Separate tags with commas</small>
+              </div>
+              <input type="hidden" id="paperId">
+              <div class="form-actions">
+                <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+                <button type="submit" class="btn btn-primary" id="submitBtn">Save Paper</button>
+              </div>
+            </form>
+          </div>
+        </div>
+
+        <div id="deleteModal" class="modal hidden">
+          <div class="modal-overlay" onclick="closeDeleteModal()"></div>
+          <div class="modal-content modal-small">
+            <div class="modal-header">
+              <h2>Delete Paper</h2>
+              <button class="modal-close" onclick="closeDeleteModal()">×</button>
+            </div>
+            <p class="delete-message">Are you sure you want to delete this paper? This action cannot be undone.</p>
+            <div class="form-actions">
+              <button class="btn btn-secondary" onclick="closeDeleteModal()">Cancel</button>
+              <button class="btn btn-danger" onclick="confirmDelete()">Delete</button>
+            </div>
+          </div>
+        </div>
+
+        <div id="toast" class="toast hidden">
+          <span id="toastMessage"></span>
+        </div>
+      </div>
+
+      <script>window.__SSR__ = true; window.__INITIAL_DATA__ = ${initialData};</script>
+      <script src="app.js"></script>
+      <script>
+        (function () {
+          const form = document.getElementById('searchForm');
+          const input = document.getElementById('searchInput');
+          if (!form || !input) return;
+          let timer = null;
+          input.addEventListener('input', () => {
+            clearTimeout(timer);
+            timer = setTimeout(() => form.submit(), 300);
+          });
+        })();
+      </script>
+    </body>
+    </html>
+  `;
+}
+
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function escapeJsString(text: string): string {
+  return text
+    .replace(/\\/g, '\\\\')
+    .replace(/'/g, "\\'")
+    .replace(/\n/g, '\\n')
+    .replace(/\r/g, '\\r')
+    .replace(/\u2028/g, '\\u2028')
+    .replace(/\u2029/g, '\\u2029');
+}
+
+function escapeClassName(text: string): string {
+  return text.toLowerCase().replace(/\s+/g, '');
+}
+
+function formatRelativeDate(dateString: string): string {
+  const date = new Date(dateString);
+  const now = new Date();
+  const diffTime = Math.abs(now.getTime() - date.getTime());
+  const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+
+  if (diffDays === 0) return 'Today';
+  if (diffDays === 1) return 'Yesterday';
+  if (diffDays < 7) return `${diffDays} days ago`;
+  if (diffDays < 30) return `${Math.floor(diffDays / 7)} weeks ago`;
+  if (diffDays < 365) return `${Math.floor(diffDays / 30)} months ago`;
+
+  return date.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
+}
+
 // Serve frontend for all non-API routes
-app.get('*', (_req: Request, res: Response) => {
-  res.sendFile(path.join(__dirname, '..', 'public', 'index.html'));
+app.get('*', (req: Request<unknown, unknown, unknown, PaperQuery>, res: Response) => {
+  try {
+    const { list, tags, queryState } = getSsrData(req.query);
+    const html = renderSsrApp(list, tags, queryState);
+    res.status(200).send(html);
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    res.status(500).send(`<pre>SSR error: ${errorMessage}</pre>`);
+  }
 });
 
 // Start server
