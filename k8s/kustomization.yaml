@@ -22,4 +22,4 @@ commonLabels:
 images:
   - name: ghcr.io/s3nthilg0pal/paper-bookmark
     newName: ghcr.io/s3nthilg0pal/paper-bookmark
-    newTag: latest
+    newTag: main
