@@ -2,7 +2,7 @@
 
 A lightweight, self-hostable research paper bookmarking system. Save, organize, and quickly access your research papers from any device.
 
-![Paper Bookmark](https://img.shields.io/badge/self--hosted-NoSQL-blue) ![Node.js](https://img.shields.io/badge/node-%3E%3D18-green) ![Docker](https://img.shields.io/badge/docker-ready-blue)
+![Paper Bookmark](https://img.shields.io/badge/self--hosted-NoSQL-blue) ![Node.js](https://img.shields.io/badge/node-%3E%3D22-green) ![TypeScript](https://img.shields.io/badge/TypeScript-5.6-blue) ![Docker](https://img.shields.io/badge/docker-ready-blue)
 
 ## ✨ Features
 
@@ -10,9 +10,10 @@ A lightweight, self-hostable research paper bookmarking system. Save, organize, 
 - **🔍 Smart Search** - Search by title, authors, abstract, or tags
 - **🏷️ Tag Organization** - Organize papers with custom tags
 - **📥 Auto-Fetch Metadata** - Automatically fetch paper info from arXiv
-- **🗄️ Lightweight NoSQL** - Uses NeDB, a lightweight embedded database
+- **🗄️ Lightweight NoSQL** - Uses LokiJS, a lightweight embedded database
 - **🐳 Docker Ready** - Easy self-hosting with Docker
 - **⌨️ Keyboard Shortcuts** - Quick access with Ctrl+K (search), Ctrl+N (new)
+- **🔷 TypeScript** - Fully typed codebase for better maintainability
 
 ## 🚀 Quick Start
 
@@ -21,6 +22,9 @@ A lightweight, self-hostable research paper bookmarking system. Save, organize, 
 ```bash
 # Install dependencies
 npm install
+
+# Build TypeScript
+npm run build
 
 # Start the server
 npm start
