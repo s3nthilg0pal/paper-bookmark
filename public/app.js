@@ -168,7 +168,7 @@ async function loadPapers() {
     params.append('sort', sort);
     params.append('order', order);
     
-    const response = await fetchWithAuth(`${API_BASE}/papers?${params}`);
+    const response = await fetch(`${API_BASE}/papers?${params}`);
     const data = await response.json();
     
     if (data.success) {
@@ -187,7 +187,7 @@ async function loadPapers() {
 
 async function loadTags() {
   try {
-    const response = await fetchWithAuth(`${API_BASE}/tags`);
+    const response = await fetch(`${API_BASE}/tags`);
     const data = await response.json();
     
     if (data.success) {
@@ -206,7 +206,7 @@ async function savePaper(paperData) {
       ? `${API_BASE}/papers/${paperData.id}`
       : `${API_BASE}/papers`;
     
-    const response = await fetchWithAuth(url, {
+    const response = await fetch(url, {
       method: isEdit ? 'PUT' : 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(paperData)
@@ -230,7 +230,7 @@ async function savePaper(paperData) {
 
 async function deletePaper(id) {
   try {
-    const response = await fetchWithAuth(`${API_BASE}/papers/${id}`, {
+    const response = await fetch(`${API_BASE}/papers/${id}`, {
       method: 'DELETE'
     });
     
@@ -251,7 +251,7 @@ async function deletePaper(id) {
 
 async function trackAccess(id) {
   try {
-    await fetchWithAuth(`${API_BASE}/papers/${id}/access`, { method: 'POST' });
+    await fetch(`${API_BASE}/papers/${id}/access`, { method: 'POST' });
   } catch (error) {
     console.error('Error tracking access:', error);
   }
@@ -273,7 +273,7 @@ async function fetchMetadata() {
     fetchBtn.disabled = true;
     fetchBtnText.textContent = 'Fetching...';
     
-    const response = await fetchWithAuth(`${API_BASE}/fetch-metadata`, {
+    const response = await fetch(`${API_BASE}/fetch-metadata`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ url })
