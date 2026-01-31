@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: paper-bookmark
+  labels:
+    app.kubernetes.io/name: paper-bookmark
+    app.kubernetes.io/part-of: paper-bookmark

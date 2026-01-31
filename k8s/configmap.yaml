@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: paper-bookmark-config
+  namespace: paper-bookmark
+  labels:
+    app.kubernetes.io/name: paper-bookmark
+    app.kubernetes.io/component: config
+data:
+  NODE_ENV: "production"
+  PORT: "3000"

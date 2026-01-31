@@ -1,0 +1,18 @@
+version: '3.8'
+
+services:
+  paper-bookmark:
+    build: .
+    container_name: paper-bookmark
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    volumes:
+      - paper-data:/app/data
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+
+volumes:
+  paper-data:
+    driver: local

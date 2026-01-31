@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: paper-bookmark
+  namespace: paper-bookmark
+  labels:
+    app.kubernetes.io/name: paper-bookmark
+    app.kubernetes.io/component: server
+spec:
+  type: LoadBalancer
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+      protocol: TCP
+  selector:
+    app.kubernetes.io/name: paper-bookmark

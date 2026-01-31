@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Paper Bookmark</title>
+  <link rel="stylesheet" href="styles.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div class="app">
+    <!-- Header -->
+    <header class="header">
+      <div class="header-content">
+        <h1 class="logo">
+          <span class="logo-icon">📚</span>
+          <span class="logo-text">Paper Bookmark</span>
+        </h1>
+        <button class="btn btn-primary add-btn" onclick="openAddModal()">
+          <span class="btn-icon">+</span>
+          <span class="btn-text">Add Paper</span>
+        </button>
+      </div>
+    </header>
+
+    <!-- Search & Filter Bar -->
+    <div class="search-bar">
+      <div class="search-container">
+        <input 
+          type="text" 
+          id="searchInput" 
+          placeholder="Search papers..." 
+          class="search-input"
+          oninput="handleSearch()"
+        >
+        <span class="search-icon">🔍</span>
+      </div>
+      <div class="filter-container">
+        <select id="tagFilter" class="filter-select" onchange="handleFilter()">
+          <option value="">All Tags</option>
+        </select>
+        <select id="sortSelect" class="filter-select" onchange="handleFilter()">
+          <option value="dateAdded-desc">Newest First</option>
+          <option value="dateAdded-asc">Oldest First</option>
+          <option value="title-asc">Title A-Z</option>
+          <option value="title-desc">Title Z-A</option>
+          <option value="accessCount-desc">Most Accessed</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- Papers List -->
+    <main class="papers-container">
+      <div id="papersList" class="papers-list">
+        <!-- Papers will be rendered here -->
+      </div>
+      <div id="emptyState" class="empty-state hidden">
+        <div class="empty-icon">📄</div>
+        <h2>No papers yet</h2>
+        <p>Start by adding your first research paper</p>
+        <button class="btn btn-primary" onclick="openAddModal()">Add Paper</button>
+      </div>
+      <div id="loadingState" class="loading-state">
+        <div class="spinner"></div>
+        <p>Loading papers...</p>
+      </div>
+    </main>
+
+    <!-- Add/Edit Paper Modal -->
+    <div id="paperModal" class="modal hidden">
+      <div class="modal-overlay" onclick="closeModal()"></div>
+      <div class="modal-content">
+        <div class="modal-header">
+          <h2 id="modalTitle">Add Paper</h2>
+          <button class="modal-close" onclick="closeModal()">×</button>
+        </div>
+        <form id="paperForm" onsubmit="handleSubmit(event)">
+          <div class="form-group">
+            <label for="paperUrl">Paper URL *</label>
+            <div class="url-input-group">
+              <input 
+                type="url" 
+                id="paperUrl" 
+                required 
+                placeholder="https://arxiv.org/abs/..."
+                class="form-input"
+              >
+              <button type="button" class="btn btn-secondary fetch-btn" onclick="fetchMetadata()">
+                <span id="fetchBtnText">Fetch Info</span>
+              </button>
+            </div>
+          </div>
+          <div class="form-group">
+            <label for="paperTitle">Title *</label>
+            <input 
+              type="text" 
+              id="paperTitle" 
+              required 
+              placeholder="Paper title"
+              class="form-input"
+            >
+          </div>
+          <div class="form-group">
+            <label for="paperAuthors">Authors</label>
+            <input 
+              type="text" 
+              id="paperAuthors" 
+              placeholder="Author names (comma separated)"
+              class="form-input"
+            >
+          </div>
+          <div class="form-group">
+            <label for="paperAbstract">Abstract / Notes</label>
+            <textarea 
+              id="paperAbstract" 
+              placeholder="Paper abstract or your notes..."
+              class="form-input form-textarea"
+              rows="4"
+            ></textarea>
+          </div>
+          <div class="form-group">
+            <label for="paperTags">Tags</label>
+            <input 
+              type="text" 
+              id="paperTags" 
+              placeholder="machine-learning, nlp, transformers"
+              class="form-input"
+            >
+            <small class="form-hint">Separate tags with commas</small>
+          </div>
+          <input type="hidden" id="paperId">
+          <div class="form-actions">
+            <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+            <button type="submit" class="btn btn-primary" id="submitBtn">Save Paper</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Delete Confirmation Modal -->
+    <div id="deleteModal" class="modal hidden">
+      <div class="modal-overlay" onclick="closeDeleteModal()"></div>
+      <div class="modal-content modal-small">
+        <div class="modal-header">
+          <h2>Delete Paper</h2>
+          <button class="modal-close" onclick="closeDeleteModal()">×</button>
+        </div>
+        <p class="delete-message">Are you sure you want to delete this paper? This action cannot be undone.</p>
+        <div class="form-actions">
+          <button class="btn btn-secondary" onclick="closeDeleteModal()">Cancel</button>
+          <button class="btn btn-danger" onclick="confirmDelete()">Delete</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Toast Notification -->
+    <div id="toast" class="toast hidden">
+      <span id="toastMessage"></span>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
