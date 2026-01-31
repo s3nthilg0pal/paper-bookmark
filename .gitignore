@@ -4,3 +4,7 @@ data/*.db
 .DS_Store
 *.log
 npm-debug.log*
+
+# TypeScript
+dist/
+*.tsbuildinfo
