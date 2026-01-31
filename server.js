@@ -12,15 +12,18 @@ const PORT = process.env.PORT || 3000;
 // Create HTTP server for both Express and WebSocket
 const server = http.createServer(app);
 
-// Initialize WebSocket server
-const wss = new WebSocket.Server({ server });
+// Initialize WebSocket server on specific path for better proxy compatibility
+const wss = new WebSocket.Server({ server, path: '/ws' });
 
 // Track connected clients
 const clients = new Set();
 
-wss.on('connection', (ws) => {
+wss.on('connection', (ws, req) => {
   clients.add(ws);
-  console.log(`📱 Client connected. Total clients: ${clients.size}`);
+  console.log(`📱 Client connected from ${req.headers['x-forwarded-for'] || req.socket.remoteAddress}. Total: ${clients.size}`);
+  
+  // Send a ping to confirm connection
+  ws.send(JSON.stringify({ event: 'connected', data: { clientCount: clients.size } }));
   
   ws.on('close', () => {
     clients.delete(ws);
@@ -31,6 +34,26 @@ wss.on('connection', (ws) => {
     console.error('WebSocket error:', error);
     clients.delete(ws);
   });
+  
+  // Handle ping/pong for connection keep-alive (important for Cloudflare)
+  ws.isAlive = true;
+  ws.on('pong', () => { ws.isAlive = true; });
+});
+
+// Ping all clients every 30 seconds to keep connections alive through proxies
+const pingInterval = setInterval(() => {
+  wss.clients.forEach((ws) => {
+    if (ws.isAlive === false) {
+      clients.delete(ws);
+      return ws.terminate();
+    }
+    ws.isAlive = false;
+    ws.ping();
+  });
+}, 30000);
+
+wss.on('close', () => {
+  clearInterval(pingInterval);
 });
 
 // Broadcast update to all connected clients

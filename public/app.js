@@ -4,8 +4,9 @@ const API_BASE = '/api';
 // ============== WebSocket Configuration ==============
 let ws = null;
 let wsReconnectAttempts = 0;
-const WS_MAX_RECONNECT_ATTEMPTS = 10;
-const WS_RECONNECT_DELAY = 2000;
+const WS_MAX_RECONNECT_ATTEMPTS = 5;
+const WS_RECONNECT_DELAY = 3000;
+let wsEnabled = true;
 
 // ============== State ==============
 let papers = [];
@@ -34,42 +35,58 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // ============== WebSocket Functions ==============
 function initWebSocket() {
-  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const wsUrl = `${protocol}//${window.location.host}`;
+  if (!wsEnabled) return;
   
-  ws = new WebSocket(wsUrl);
-  
-  ws.onopen = () => {
-    console.log('🔄 Real-time sync connected');
-    wsReconnectAttempts = 0;
-    showConnectionStatus(true);
-  };
-  
-  ws.onmessage = (event) => {
-    try {
-      const { event: eventType, data } = JSON.parse(event.data);
-      handleWebSocketEvent(eventType, data);
-    } catch (error) {
-      console.error('WebSocket message error:', error);
-    }
-  };
-  
-  ws.onclose = () => {
-    console.log('🔌 Real-time sync disconnected');
-    showConnectionStatus(false);
-    attemptReconnect();
-  };
-  
-  ws.onerror = (error) => {
-    console.error('WebSocket error:', error);
-  };
+  try {
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsUrl = `${protocol}//${window.location.host}/ws`;
+    
+    ws = new WebSocket(wsUrl);
+    
+    ws.onopen = () => {
+      console.log('🔄 Real-time sync connected');
+      wsReconnectAttempts = 0;
+      showConnectionStatus(true);
+    };
+    
+    ws.onmessage = (event) => {
+      try {
+        const { event: eventType, data } = JSON.parse(event.data);
+        handleWebSocketEvent(eventType, data);
+      } catch (error) {
+        console.error('WebSocket message error:', error);
+      }
+    };
+    
+    ws.onclose = (event) => {
+      console.log('🔌 Real-time sync disconnected', event.code);
+      showConnectionStatus(false);
+      attemptReconnect();
+    };
+    
+    ws.onerror = (error) => {
+      console.error('WebSocket error:', error);
+      // Don't show error toast - just silently fall back to manual refresh
+    };
+  } catch (error) {
+    console.error('WebSocket init error:', error);
+    wsEnabled = false;
+    showConnectionStatus(false, true);
+  }
 }
 
 function attemptReconnect() {
+  if (!wsEnabled) return;
+  
   if (wsReconnectAttempts < WS_MAX_RECONNECT_ATTEMPTS) {
     wsReconnectAttempts++;
-    console.log(`Reconnecting... (attempt ${wsReconnectAttempts})`);
-    setTimeout(initWebSocket, WS_RECONNECT_DELAY);
+    const delay = WS_RECONNECT_DELAY * Math.min(wsReconnectAttempts, 3);
+    console.log(`Reconnecting in ${delay/1000}s... (attempt ${wsReconnectAttempts})`);
+    setTimeout(initWebSocket, delay);
+  } else {
+    console.log('Max reconnect attempts reached. Real-time sync disabled.');
+    wsEnabled = false;
+    showConnectionStatus(false, true);
   }
 }
 
@@ -119,12 +136,17 @@ function handlePaperDeleted(data) {
   }
 }
 
-function showConnectionStatus(connected) {
-  // Update UI to show connection status (optional visual indicator)
+function showConnectionStatus(connected, disabled = false) {
+  // Update UI to show connection status
   const existingIndicator = document.getElementById('syncIndicator');
   if (existingIndicator) {
-    existingIndicator.className = `sync-indicator ${connected ? 'connected' : 'disconnected'}`;
-    existingIndicator.title = connected ? 'Real-time sync active' : 'Reconnecting...';
+    if (disabled) {
+      existingIndicator.className = 'sync-indicator disabled';
+      existingIndicator.title = 'Real-time sync unavailable - refresh to update';
+    } else {
+      existingIndicator.className = `sync-indicator ${connected ? 'connected' : 'disconnected'}`;
+      existingIndicator.title = connected ? 'Real-time sync active' : 'Reconnecting...';
+    }
   }
 }
 
