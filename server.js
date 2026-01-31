@@ -547,10 +547,6 @@ initDatabase().then(() => {
     console.log(`📚 Paper Bookmark server running on http://localhost:${PORT}`);
     console.log(`🔄 WebSocket server ready for real-time sync`);
     console.log(`🔒 Security: Helmet enabled, Rate limiting: ${RATE_LIMIT_MAX}/${RATE_LIMIT_WINDOW/60000}min`);
-    if (API_KEY) {
-      console.log(`🔑 API Key authentication enabled`);
-    } else {
-      console.log(`⚠️  API Key authentication disabled (set API_KEY env var to enable)`);
-    }
+    console.log(`🔐 Authentication: Cloudflare Access (external)`);
   });
 });
