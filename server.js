@@ -36,6 +36,7 @@ app.use(helmet({
     },
   },
   crossOriginEmbedderPolicy: false,
+  hsts: false,  // Disable HTTPS redirect for local network access
 }));
 
 // CORS configuration
