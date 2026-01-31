@@ -109,8 +109,7 @@ function handleWebSocketEvent(eventType, data) {
 
 function handlePaperCreated(newPaper) {
   // Check if paper already exists (might be from our own action)
-  const paperId = newPaper.id || newPaper._id;
-  const exists = papers.some(p => (p.id || p._id) === paperId);
+  const exists = papers.some(p => p._id === newPaper._id);
   if (!exists) {
     // Reload to respect current sort/filter
     loadPapers();
@@ -120,8 +119,7 @@ function handlePaperCreated(newPaper) {
 }
 
 function handlePaperUpdated(updatedPaper) {
-  const paperId = updatedPaper.id || updatedPaper._id;
-  const index = papers.findIndex(p => (p.id || p._id) === paperId);
+  const index = papers.findIndex(p => p._id === updatedPaper._id);
   if (index !== -1) {
     papers[index] = updatedPaper;
     renderPapers();
@@ -130,8 +128,7 @@ function handlePaperUpdated(updatedPaper) {
 }
 
 function handlePaperDeleted(data) {
-  const paperId = data.id || data._id;
-  const index = papers.findIndex(p => (p.id || p._id) === paperId);
+  const index = papers.findIndex(p => p._id === data._id);
   if (index !== -1) {
     papers.splice(index, 1);
     renderPapers();
@@ -175,7 +172,7 @@ async function loadPapers() {
       papers = data.data;
       renderPapers();
     } else {
-      showToast(data.error || 'Failed to load papers', 'error');
+      showToast('Failed to load papers', 'error');
     }
   } catch (error) {
     console.error('Error loading papers:', error);
@@ -201,9 +198,9 @@ async function loadTags() {
 
 async function savePaper(paperData) {
   try {
-    const isEdit = !!paperData.id;
+    const isEdit = !!paperData._id;
     const url = isEdit 
-      ? `${API_BASE}/papers/${paperData.id}`
+      ? `${API_BASE}/papers/${paperData._id}`
       : `${API_BASE}/papers`;
     
     const response = await fetch(url, {
@@ -220,7 +217,7 @@ async function savePaper(paperData) {
       loadPapers();
       loadTags();
     } else {
-      showToast(data.error || data.errors?.join(', ') || 'Failed to save paper', 'error');
+      showToast(data.error || 'Failed to save paper', 'error');
     }
   } catch (error) {
     console.error('Error saving paper:', error);
@@ -290,7 +287,7 @@ async function fetchMetadata() {
       
       showToast('Metadata fetched!', 'success');
     } else {
-      showToast(data.error || 'Could not fetch metadata', 'error');
+      showToast('Could not fetch metadata', 'error');
     }
   } catch (error) {
     console.error('Error fetching metadata:', error);
@@ -312,16 +309,13 @@ function renderPapers() {
   papersList.classList.remove('hidden');
   emptyState.classList.add('hidden');
   
-  // Use id field (with _id fallback for backward compatibility)
-  papersList.innerHTML = papers.map(paper => {
-    const paperId = paper.id || paper._id;
-    return `
-    <article class="paper-card" onclick="openPaper('${paperId}', '${escapeHtml(paper.url)}')">
+  papersList.innerHTML = papers.map(paper => `
+    <article class="paper-card" onclick="openPaper('${paper._id}', '${escapeHtml(paper.url)}')">
       <div class="paper-header">
         <span class="paper-source ${paper.source.toLowerCase().replace(/\s+/g, '')}">${paper.source}</span>
         <div class="paper-actions" onclick="event.stopPropagation()">
-          <button class="paper-action-btn" onclick="editPaper('${paperId}')" title="Edit">✏️</button>
-          <button class="paper-action-btn" onclick="openDeleteModal('${paperId}')" title="Delete">🗑️</button>
+          <button class="paper-action-btn" onclick="editPaper('${paper._id}')" title="Edit">✏️</button>
+          <button class="paper-action-btn" onclick="openDeleteModal('${paper._id}')" title="Delete">🗑️</button>
         </div>
       </div>
       <h3 class="paper-title">${escapeHtml(paper.title)}</h3>
@@ -329,12 +323,12 @@ function renderPapers() {
       ${paper.abstract ? `<p class="paper-abstract">${escapeHtml(paper.abstract)}</p>` : ''}
       <div class="paper-footer">
         <div class="paper-tags">
-          ${(paper.tags || []).map(tag => `<span class="paper-tag">${escapeHtml(tag)}</span>`).join('')}
+          ${paper.tags.map(tag => `<span class="paper-tag">${escapeHtml(tag)}</span>`).join('')}
         </div>
         <span class="paper-date">${formatDate(paper.dateAdded)}</span>
       </div>
     </article>
-  `}).join('');
+  `).join('');
 }
 
 function renderTagFilter() {
@@ -376,7 +370,7 @@ function handleSubmit(event) {
   
   const editId = document.getElementById('paperId').value;
   if (editId) {
-    paperData.id = editId;
+    paperData._id = editId;
   }
   
   savePaper(paperData);
@@ -398,19 +392,19 @@ function openAddModal() {
 }
 
 function editPaper(id) {
-  const paper = papers.find(p => (p.id || p._id) === id);
+  const paper = papers.find(p => p._id === id);
   if (!paper) return;
   
   currentEditId = id;
   document.getElementById('modalTitle').textContent = 'Edit Paper';
   document.getElementById('submitBtn').textContent = 'Update Paper';
   
-  document.getElementById('paperId').value = paper.id || paper._id;
+  document.getElementById('paperId').value = paper._id;
   document.getElementById('paperUrl').value = paper.url;
   document.getElementById('paperTitle').value = paper.title;
   document.getElementById('paperAuthors').value = paper.authors || '';
   document.getElementById('paperAbstract').value = paper.abstract || '';
-  document.getElementById('paperTags').value = (paper.tags || []).join(', ');
+  document.getElementById('paperTags').value = paper.tags.join(', ');
   
   paperModal.classList.remove('hidden');
   document.body.style.overflow = 'hidden';
