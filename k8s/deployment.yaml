@@ -22,7 +22,7 @@ spec:
       containers:
         - name: paper-bookmark
           image: ghcr.io/s3nthilg0pal/paper-bookmark:main
-          imagePullPolicy: IfNotPresent
+          imagePullPolicy: Always
           ports:
             - name: http
               containerPort: 3000
