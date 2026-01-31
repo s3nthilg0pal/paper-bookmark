@@ -21,7 +21,7 @@ spec:
     spec:
       containers:
         - name: paper-bookmark
-          image: paper-bookmark:latest
+          image: ghcr.io/s3nthilg0pal/paper-bookmark:main
           imagePullPolicy: IfNotPresent
           ports:
             - name: http

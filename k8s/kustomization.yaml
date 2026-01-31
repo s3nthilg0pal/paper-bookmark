@@ -20,6 +20,6 @@ commonLabels:
   app.kubernetes.io/part-of: paper-bookmark
 
 images:
-  - name: paper-bookmark
-    newName: paper-bookmark
+  - name: ghcr.io/s3nthilg0pal/paper-bookmark
+    newName: ghcr.io/s3nthilg0pal/paper-bookmark
     newTag: latest
