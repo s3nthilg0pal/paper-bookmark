@@ -1,12 +1,12 @@
 // ============== API Configuration ==============
 const API_BASE = '/api';
 
-// ============== WebSocket Configuration ==============
-let ws = null;
-let wsReconnectAttempts = 0;
-const WS_MAX_RECONNECT_ATTEMPTS = 5;
-const WS_RECONNECT_DELAY = 3000;
-let wsEnabled = true;
+// ============== SSE Configuration ==============
+let eventSource = null;
+let sseReconnectAttempts = 0;
+const SSE_MAX_RECONNECT_ATTEMPTS = 5;
+const SSE_RECONNECT_DELAY = 3000;
+let sseEnabled = true;
 
 // ============== State ==============
 let papers = [];
@@ -30,80 +30,68 @@ const sortSelect = document.getElementById('sortSelect');
 document.addEventListener('DOMContentLoaded', () => {
   loadPapers();
   loadTags();
-  initWebSocket();
+  initSSE();
 });
 
-// ============== WebSocket Functions ==============
-function initWebSocket() {
-  if (!wsEnabled) return;
+// ============== SSE Functions (Server-Sent Events) ==============
+function initSSE() {
+  if (!sseEnabled || !window.EventSource) {
+    showConnectionStatus(false, true);
+    return;
+  }
   
   try {
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${protocol}//${window.location.host}/ws`;
+    eventSource = new EventSource(`${API_BASE}/events`);
     
-    ws = new WebSocket(wsUrl);
-    
-    ws.onopen = () => {
-      console.log('🔄 Real-time sync connected');
-      wsReconnectAttempts = 0;
+    eventSource.onopen = () => {
+      console.log('🔄 Real-time sync connected (SSE)');
+      sseReconnectAttempts = 0;
       showConnectionStatus(true);
     };
     
-    ws.onmessage = (event) => {
-      try {
-        const { event: eventType, data } = JSON.parse(event.data);
-        handleWebSocketEvent(eventType, data);
-      } catch (error) {
-        console.error('WebSocket message error:', error);
+    eventSource.addEventListener('connected', (e) => {
+      console.log('SSE connected:', JSON.parse(e.data));
+    });
+    
+    eventSource.addEventListener('paper:created', (e) => {
+      handlePaperCreated(JSON.parse(e.data));
+    });
+    
+    eventSource.addEventListener('paper:updated', (e) => {
+      handlePaperUpdated(JSON.parse(e.data));
+    });
+    
+    eventSource.addEventListener('paper:deleted', (e) => {
+      handlePaperDeleted(JSON.parse(e.data));
+    });
+    
+    eventSource.onerror = (error) => {
+      console.error('SSE error:', error);
+      showConnectionStatus(false);
+      
+      if (eventSource.readyState === EventSource.CLOSED) {
+        attemptReconnect();
       }
     };
-    
-    ws.onclose = (event) => {
-      console.log('🔌 Real-time sync disconnected', event.code);
-      showConnectionStatus(false);
-      attemptReconnect();
-    };
-    
-    ws.onerror = (error) => {
-      console.error('WebSocket error:', error);
-      // Don't show error toast - just silently fall back to manual refresh
-    };
   } catch (error) {
-    console.error('WebSocket init error:', error);
-    wsEnabled = false;
+    console.error('SSE init error:', error);
+    sseEnabled = false;
     showConnectionStatus(false, true);
   }
 }
 
 function attemptReconnect() {
-  if (!wsEnabled) return;
+  if (!sseEnabled) return;
   
-  if (wsReconnectAttempts < WS_MAX_RECONNECT_ATTEMPTS) {
-    wsReconnectAttempts++;
-    const delay = WS_RECONNECT_DELAY * Math.min(wsReconnectAttempts, 3);
-    console.log(`Reconnecting in ${delay/1000}s... (attempt ${wsReconnectAttempts})`);
-    setTimeout(initWebSocket, delay);
+  if (sseReconnectAttempts < SSE_MAX_RECONNECT_ATTEMPTS) {
+    sseReconnectAttempts++;
+    const delay = SSE_RECONNECT_DELAY * Math.min(sseReconnectAttempts, 3);
+    console.log(`Reconnecting in ${delay/1000}s... (attempt ${sseReconnectAttempts})`);
+    setTimeout(initSSE, delay);
   } else {
     console.log('Max reconnect attempts reached. Real-time sync disabled.');
-    wsEnabled = false;
+    sseEnabled = false;
     showConnectionStatus(false, true);
-  }
-}
-
-function handleWebSocketEvent(eventType, data) {
-  switch (eventType) {
-    case 'paper:created':
-      // Add new paper to the list if it matches current filters
-      handlePaperCreated(data);
-      break;
-    case 'paper:updated':
-      // Update existing paper in the list
-      handlePaperUpdated(data);
-      break;
-    case 'paper:deleted':
-      // Remove paper from the list
-      handlePaperDeleted(data);
-      break;
   }
 }
 

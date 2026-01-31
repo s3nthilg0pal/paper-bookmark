@@ -1,68 +1,20 @@
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
-const http = require('http');
-const WebSocket = require('ws');
 const loki = require('lokijs');
 const fetch = require('node-fetch');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Create HTTP server for both Express and WebSocket
-const server = http.createServer(app);
+// Track SSE clients for real-time updates
+const sseClients = new Set();
 
-// Initialize WebSocket server on specific path for better proxy compatibility
-const wss = new WebSocket.Server({ server, path: '/ws' });
-
-// Track connected clients
-const clients = new Set();
-
-wss.on('connection', (ws, req) => {
-  clients.add(ws);
-  console.log(`📱 Client connected from ${req.headers['x-forwarded-for'] || req.socket.remoteAddress}. Total: ${clients.size}`);
-  
-  // Send a ping to confirm connection
-  ws.send(JSON.stringify({ event: 'connected', data: { clientCount: clients.size } }));
-  
-  ws.on('close', () => {
-    clients.delete(ws);
-    console.log(`📱 Client disconnected. Total clients: ${clients.size}`);
-  });
-  
-  ws.on('error', (error) => {
-    console.error('WebSocket error:', error);
-    clients.delete(ws);
-  });
-  
-  // Handle ping/pong for connection keep-alive (important for Cloudflare)
-  ws.isAlive = true;
-  ws.on('pong', () => { ws.isAlive = true; });
-});
-
-// Ping all clients every 30 seconds to keep connections alive through proxies
-const pingInterval = setInterval(() => {
-  wss.clients.forEach((ws) => {
-    if (ws.isAlive === false) {
-      clients.delete(ws);
-      return ws.terminate();
-    }
-    ws.isAlive = false;
-    ws.ping();
-  });
-}, 30000);
-
-wss.on('close', () => {
-  clearInterval(pingInterval);
-});
-
-// Broadcast update to all connected clients
+// Broadcast update to all connected SSE clients
 function broadcast(event, data) {
-  const message = JSON.stringify({ event, data });
-  clients.forEach((client) => {
-    if (client.readyState === WebSocket.OPEN) {
-      client.send(message);
-    }
+  const message = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
+  sseClients.forEach((res) => {
+    res.write(message);
   });
 }
 
@@ -96,6 +48,34 @@ function generateId() {
 app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
+
+// ============== SSE ENDPOINT ==============
+
+// Server-Sent Events endpoint for real-time updates (Cloudflare friendly)
+app.get('/api/events', (req, res) => {
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no'); // Disable nginx buffering
+  res.flushHeaders();
+
+  // Send initial connection event
+  res.write(`event: connected\ndata: ${JSON.stringify({ clientCount: sseClients.size + 1 })}\n\n`);
+
+  sseClients.add(res);
+  console.log(`📱 SSE client connected. Total: ${sseClients.size}`);
+
+  // Send keepalive every 30 seconds to prevent timeout
+  const keepAlive = setInterval(() => {
+    res.write(': keepalive\n\n');
+  }, 30000);
+
+  req.on('close', () => {
+    clearInterval(keepAlive);
+    sseClients.delete(res);
+    console.log(`📱 SSE client disconnected. Total: ${sseClients.size}`);
+  });
+});
 
 // ============== API ROUTES ==============
 
@@ -395,8 +375,9 @@ app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-// Start server (use 'server' instead of 'app' for WebSocket support)
-server.listen(PORT, () => {
+// Start server
+app.listen(PORT, () => {
   console.log(`📚 Paper Bookmark server running on http://localhost:${PORT}`);
-  console.log(`🔄 WebSocket server ready for real-time sync`);
+  console.log(`🔄 SSE ready for real-time sync (Cloudflare compatible)`);
 });
+
