@@ -1,11 +1,47 @@
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
+const http = require('http');
+const WebSocket = require('ws');
 const Datastore = require('nedb-promises');
 const fetch = require('node-fetch');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+// Create HTTP server for both Express and WebSocket
+const server = http.createServer(app);
+
+// Initialize WebSocket server
+const wss = new WebSocket.Server({ server });
+
+// Track connected clients
+const clients = new Set();
+
+wss.on('connection', (ws) => {
+  clients.add(ws);
+  console.log(`📱 Client connected. Total clients: ${clients.size}`);
+  
+  ws.on('close', () => {
+    clients.delete(ws);
+    console.log(`📱 Client disconnected. Total clients: ${clients.size}`);
+  });
+  
+  ws.on('error', (error) => {
+    console.error('WebSocket error:', error);
+    clients.delete(ws);
+  });
+});
+
+// Broadcast update to all connected clients
+function broadcast(event, data) {
+  const message = JSON.stringify({ event, data });
+  clients.forEach((client) => {
+    if (client.readyState === WebSocket.OPEN) {
+      client.send(message);
+    }
+  });
+}
 
 // Initialize NeDB database
 const db = Datastore.create({
@@ -100,6 +136,10 @@ app.post('/api/papers', async (req, res) => {
     };
     
     const newPaper = await db.insert(paper);
+    
+    // Broadcast to all connected clients
+    broadcast('paper:created', newPaper);
+    
     res.status(201).json({ success: true, data: newPaper });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
@@ -130,6 +170,10 @@ app.put('/api/papers/:id', async (req, res) => {
     }
     
     const updatedPaper = await db.findOne({ _id: req.params.id });
+    
+    // Broadcast to all connected clients
+    broadcast('paper:updated', updatedPaper);
+    
     res.json({ success: true, data: updatedPaper });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
@@ -144,6 +188,9 @@ app.delete('/api/papers/:id', async (req, res) => {
     if (numRemoved === 0) {
       return res.status(404).json({ success: false, error: 'Paper not found' });
     }
+    
+    // Broadcast to all connected clients
+    broadcast('paper:deleted', { _id: req.params.id });
     
     res.json({ success: true, message: 'Paper deleted successfully' });
   } catch (error) {
@@ -293,7 +340,8 @@ app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-// Start server
-app.listen(PORT, () => {
+// Start server (use 'server' instead of 'app' for WebSocket support)
+server.listen(PORT, () => {
   console.log(`📚 Paper Bookmark server running on http://localhost:${PORT}`);
+  console.log(`🔄 WebSocket server ready for real-time sync`);
 });

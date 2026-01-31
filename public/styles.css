@@ -83,6 +83,31 @@ body {
   font-size: 1.5rem;
 }
 
+/* ============== Sync Indicator ============== */
+.sync-indicator {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--warning);
+  margin-left: 0.5rem;
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+.sync-indicator.connected {
+  background: var(--success);
+  animation: none;
+}
+
+.sync-indicator.disconnected {
+  background: var(--danger);
+  animation: pulse 1s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
 /* ============== Buttons ============== */
 .btn {
   display: inline-flex;

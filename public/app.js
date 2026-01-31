@@ -1,6 +1,12 @@
 // ============== API Configuration ==============
 const API_BASE = '/api';
 
+// ============== WebSocket Configuration ==============
+let ws = null;
+let wsReconnectAttempts = 0;
+const WS_MAX_RECONNECT_ATTEMPTS = 10;
+const WS_RECONNECT_DELAY = 2000;
+
 // ============== State ==============
 let papers = [];
 let allTags = [];
@@ -23,7 +29,104 @@ const sortSelect = document.getElementById('sortSelect');
 document.addEventListener('DOMContentLoaded', () => {
   loadPapers();
   loadTags();
+  initWebSocket();
 });
+
+// ============== WebSocket Functions ==============
+function initWebSocket() {
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const wsUrl = `${protocol}//${window.location.host}`;
+  
+  ws = new WebSocket(wsUrl);
+  
+  ws.onopen = () => {
+    console.log('🔄 Real-time sync connected');
+    wsReconnectAttempts = 0;
+    showConnectionStatus(true);
+  };
+  
+  ws.onmessage = (event) => {
+    try {
+      const { event: eventType, data } = JSON.parse(event.data);
+      handleWebSocketEvent(eventType, data);
+    } catch (error) {
+      console.error('WebSocket message error:', error);
+    }
+  };
+  
+  ws.onclose = () => {
+    console.log('🔌 Real-time sync disconnected');
+    showConnectionStatus(false);
+    attemptReconnect();
+  };
+  
+  ws.onerror = (error) => {
+    console.error('WebSocket error:', error);
+  };
+}
+
+function attemptReconnect() {
+  if (wsReconnectAttempts < WS_MAX_RECONNECT_ATTEMPTS) {
+    wsReconnectAttempts++;
+    console.log(`Reconnecting... (attempt ${wsReconnectAttempts})`);
+    setTimeout(initWebSocket, WS_RECONNECT_DELAY);
+  }
+}
+
+function handleWebSocketEvent(eventType, data) {
+  switch (eventType) {
+    case 'paper:created':
+      // Add new paper to the list if it matches current filters
+      handlePaperCreated(data);
+      break;
+    case 'paper:updated':
+      // Update existing paper in the list
+      handlePaperUpdated(data);
+      break;
+    case 'paper:deleted':
+      // Remove paper from the list
+      handlePaperDeleted(data);
+      break;
+  }
+}
+
+function handlePaperCreated(newPaper) {
+  // Check if paper already exists (might be from our own action)
+  const exists = papers.some(p => p._id === newPaper._id);
+  if (!exists) {
+    // Reload to respect current sort/filter
+    loadPapers();
+    loadTags();
+    showToast('New paper added on another device', 'success');
+  }
+}
+
+function handlePaperUpdated(updatedPaper) {
+  const index = papers.findIndex(p => p._id === updatedPaper._id);
+  if (index !== -1) {
+    papers[index] = updatedPaper;
+    renderPapers();
+    loadTags();
+  }
+}
+
+function handlePaperDeleted(data) {
+  const index = papers.findIndex(p => p._id === data._id);
+  if (index !== -1) {
+    papers.splice(index, 1);
+    renderPapers();
+    loadTags();
+  }
+}
+
+function showConnectionStatus(connected) {
+  // Update UI to show connection status (optional visual indicator)
+  const existingIndicator = document.getElementById('syncIndicator');
+  if (existingIndicator) {
+    existingIndicator.className = `sync-indicator ${connected ? 'connected' : 'disconnected'}`;
+    existingIndicator.title = connected ? 'Real-time sync active' : 'Reconnecting...';
+  }
+}
 
 // ============== API Functions ==============
 async function loadPapers() {
