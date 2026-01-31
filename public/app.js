@@ -14,6 +14,7 @@ let allTags = [];
 let currentEditId = null;
 let deleteId = null;
 let searchTimeout = null;
+const SSR_MODE = window.__SSR__ === true || document.body?.dataset?.ssr === 'true';
 
 // ============== DOM Elements ==============
 const papersList = document.getElementById('papersList');
@@ -28,8 +29,21 @@ const sortSelect = document.getElementById('sortSelect');
 
 // ============== Initialize ==============
 document.addEventListener('DOMContentLoaded', () => {
-  loadPapers();
-  loadTags();
+  const initialData = window.__INITIAL_DATA__;
+  const hasInitialData = initialData && Array.isArray(initialData.papers);
+
+  if (hasInitialData) {
+    papers = initialData.papers;
+    allTags = Array.isArray(initialData.tags) ? initialData.tags : [];
+    renderPapers();
+    renderTagFilter();
+    showLoading(false);
+  }
+
+  if (!SSR_MODE) {
+    loadPapers({ silent: hasInitialData });
+    loadTags({ silent: hasInitialData });
+  }
   initSSE();
 });
 
@@ -96,6 +110,10 @@ function attemptReconnect() {
 }
 
 function handlePaperCreated(newPaper) {
+  if (SSR_MODE) {
+    window.location.reload();
+    return;
+  }
   // Check if paper already exists (might be from our own action)
   const exists = papers.some(p => p._id === newPaper._id);
   if (!exists) {
@@ -107,6 +125,10 @@ function handlePaperCreated(newPaper) {
 }
 
 function handlePaperUpdated(updatedPaper) {
+  if (SSR_MODE) {
+    window.location.reload();
+    return;
+  }
   const index = papers.findIndex(p => p._id === updatedPaper._id);
   if (index !== -1) {
     papers[index] = updatedPaper;
@@ -116,6 +138,10 @@ function handlePaperUpdated(updatedPaper) {
 }
 
 function handlePaperDeleted(data) {
+  if (SSR_MODE) {
+    window.location.reload();
+    return;
+  }
   const index = papers.findIndex(p => p._id === data._id);
   if (index !== -1) {
     papers.splice(index, 1);
@@ -139,9 +165,13 @@ function showConnectionStatus(connected, disabled = false) {
 }
 
 // ============== API Functions ==============
-async function loadPapers() {
+async function loadPapers(options = {}) {
+  if (SSR_MODE) return;
+  const { silent = false } = options;
   try {
-    showLoading(true);
+    if (!silent) {
+      showLoading(true);
+    }
     
     const search = searchInput.value.trim();
     const tag = tagFilter.value;
@@ -159,18 +189,24 @@ async function loadPapers() {
     if (data.success) {
       papers = data.data;
       renderPapers();
-    } else {
+    } else if (!silent) {
       showToast('Failed to load papers', 'error');
     }
   } catch (error) {
     console.error('Error loading papers:', error);
-    showToast('Error connecting to server', 'error');
+    if (!silent) {
+      showToast('Error connecting to server', 'error');
+    }
   } finally {
-    showLoading(false);
+    if (!silent) {
+      showLoading(false);
+    }
   }
 }
 
-async function loadTags() {
+async function loadTags(options = {}) {
+  if (SSR_MODE) return;
+  const { silent = false } = options;
   try {
     const response = await fetch(`${API_BASE}/tags`);
     const data = await response.json();
@@ -180,7 +216,9 @@ async function loadTags() {
       renderTagFilter();
     }
   } catch (error) {
-    console.error('Error loading tags:', error);
+    if (!silent) {
+      console.error('Error loading tags:', error);
+    }
   }
 }
 
@@ -202,6 +240,10 @@ async function savePaper(paperData) {
     if (data.success) {
       showToast(isEdit ? 'Paper updated!' : 'Paper saved!', 'success');
       closeModal();
+      if (SSR_MODE) {
+        window.location.reload();
+        return;
+      }
       loadPapers();
       loadTags();
     } else {
@@ -223,6 +265,10 @@ async function deletePaper(id) {
     
     if (data.success) {
       showToast('Paper deleted', 'success');
+      if (SSR_MODE) {
+        window.location.reload();
+        return;
+      }
       loadPapers();
       loadTags();
     } else {
@@ -235,6 +281,7 @@ async function deletePaper(id) {
 }
 
 async function trackAccess(id) {
+  if (SSR_MODE) return;
   try {
     await fetch(`${API_BASE}/papers/${id}/access`, { method: 'POST' });
   } catch (error) {
@@ -334,11 +381,13 @@ function renderTagFilter() {
 
 // ============== Event Handlers ==============
 function handleSearch() {
+  if (SSR_MODE) return;
   clearTimeout(searchTimeout);
   searchTimeout = setTimeout(loadPapers, 300);
 }
 
 function handleFilter() {
+  if (SSR_MODE) return;
   loadPapers();
 }
 
